@@ -1,0 +1,119 @@
+\section{Preliminaries}\label{sec:preliminaries}
+
+We proceed to introduce the background knowledge and the problem definition. Frequently used notation is summarized in Table \ref{tb:notation}.
+
+\begin{table}[h!]
+	\begin{center}
+		\caption{Notation Table.}
+		\begin{tabular}{c|l} % <-- Alignments: 1st column left, 2nd middle and 3rd right, with vertical lines in between
+			\label{tb:notation}
+			\textbf{Notation} & \textbf{Meaning}\\
+%			$\alpha$ & $\beta$\\
+			\hline
+			$\mathbb{E}^d$ & The $d$-dimensional Euclidean space.\\
+			$\delta(p,q)$ & The distance between any two points $p$ and $q$.\\
+			$MP(p,q)$ & The monotonic path between the two points $p$ and $q$.\\
+			$B(p,\delta(p,q))$ & The opening ball is centered at point $p$ and has a radius of $\delta(p,q)$.\\
+		\end{tabular}
+	\end{center}
+\end{table}
+
+\subsection{Problem Settings}
+We use $\mathbb{E}^d$ to represent the $d$-dimensional Euclidean space. The distance between any two points $p$ and $q$ is denoted as $\delta(p, q)$.The Approximate Nearest Neighbor (ANN) Search problem in a static scenario can be defined as follows:
+
+\begin{definition}[Approximate Nearest Neighbor Search]\label{anns}
+	Given a finite point set $S$ containing $n$ points, for a given query point $q$, the ANNS returns a query for a point $p$ in $S$ such that $\delta(p,q)\le(1+\varepsilon)\delta(r,q)$, where $r$ is the nearest neighbor of $q$ in $S$.
+\end{definition}
+
+In the above definition, $\varepsilon$ is used to indicate the approximation of the result. When $\varepsilon$ is equal to 0, the result is the exact nearest neighbor.
+
+However, in dynamic scenarios, since the dataset $S$ is constantly changing, we need to query the results of queries $q$ given at different time points $t$ in different datasets. Therefore, the dynamic approximate neighbor search problem can be defined as follows:
+
+\begin{definition}[Dynamic Approximate Nearest Neighbor Search]\label{real_anns}
+	Given a time-varying point set $P$ in space $\mathbb{E}^d$ (with state $P_t$ at time $t$), for any query for point $q$ generated at time $t$, return the approximate nearest neighbor of point $q$ in the point set $P_t$ corresponding to the time $t$ at which the query was generated.
+\end{definition}
+
+According to the above definition, for an index to support dynamic ANNS, the index must support three operations: (a) inserting new points, (b) deleting existing points, and (c) searching for the nearest neighbors of a given query point. In addition, to ensure index performance, for indexes with the same data size and similar data distribution before and after the update, (1) the query accuracy cannot decrease or decrease very little, which is the most important indicator; (2) the average search latency cannot increase, which is reflected in whether the search throughput decreases; and (3) the efficiency of the update operation must be high enough, at least better than the solution of periodically rebuilding the index.
+
+For static ANN search problems, graph-based indexing algorithms show great potential in terms of search time and recall rate, and their performance in Euclidean space is better than other methods\cite{DBLP:journals/pvldb/FuXWC19}. In order to adapt it to dynamic ANN search problems, we first analyze the reasons why existing graph indexing algorithms perform well, and try to design our update algorithm while maintaining the excellent performance of graph indexing algorithms.
+
+\subsection{The Graph-based Indexing Algorithm}
+The graph-based indexing algorithm searches based on a neighbor graph. The algorithm starts from one or a few search starting points and searches for a given query point q according to the greedy search algorithm\ref{GreedySearch}. In order to theoretically guarantee the search accuracy, the neighbor graphs used by existing graph-based indexing algorithms are mostly designed based on monotone search networks or their variants (such as HNSW\cite{DBLP:journals/corr/MalkovY16}, NSG\cite{DBLP:journals/pvldb/FuXWC19}, Vamana\cite{DBLP:journals/corr/abs-2105-09613}), which was first discussed in \cite{DBLP:conf/soda/AryaM93} and is considered to have great potential in the ANNS problem. To formally define the monotone search network, we first define the monotone path:
+
+\begin{algorithm}[h]
+	\caption{$GreedySearch(G,s,q,k,l)$}
+	\label{GreedySearch}
+	\KwData{a graph $G$, the start point $s$, the query point $q$, the result size $k$ and the candidate pool size $l$}
+	\KwResult{$k$ nearest neighbors of $q$}
+	Candidate Set $S \leftarrow \{s\}$\;
+	Visited Set $V \leftarrow \phi$\;
+	\While{$S / V\ne \phi$}{
+		$\mathbf{curr} \leftarrow$ the point closest to $\mathbf{q}$ in $\mathbf{S}$.\;
+		$V \leftarrow V \cup \{curr\}$\;
+		\ForEach{neighbor $\mathbf{n}$ of $\mathbf{curr}$}{
+			$S \leftarrow S \cup \{n\}$\;
+		}
+		\If{$S.size()>l$}{
+			retain closest $\mathbf{l}$ points to $\mathbf{q}$\;
+		}
+	}
+	return closest $\mathbf{k}$ points to $\mathbf{q}$ in $\mathbf{S}$\;
+\end{algorithm}
+
+\begin{definition}[monotonic path]\label{monotonic_path}
+	Given a finite set of $S$ consisting of $n$ points in space $\mathbb{E}^d$, $p,q \in S$, $G$ represents a graph defined on $S$. Let $v_1,v_2,...,v_k, (v_1 = p, v_k = q )$ represent a path from $p$ to $q$ in $G$, i.e. $\forall i=1,...,k-1, \overrightarrow{v_i,v_{i+1}} \in G$. This path is a monotone path if and only if $\forall i=1,...,k-1,\delta (v_i, q)>\delta (v_{i+1}, q)$. It is symbolically represented as $MP(p,q)$.
+\end{definition}
+
+Based on the definition of the monotone path, we now give the definition of the monotone search network:
+
+\begin{definition}[monotonic search network]\label{msnet}
+	Given a finite point set $S$ consisting of $n$ points in space $\mathbb{E}^d$, the graph defined on $S$ is a monotone search network if and only if there is at least one monotone path $MP(p,q)$ between any two nodes $p,q \in S$.
+\end{definition}
+
+The monotone search network ensures that there is a monotone path between any two nodes in the graph, and also ensures the connectivity of the graph. One of the important properties of MSNET is that the monotone path between any two nodes in the MSNET graph can be found without backtracking through the greedy search algorithm \ref{GreedySearch}, as described in the following Theorem 1, which has been proved in NSG \cite{DBLP:journals/pvldb/FuXWC19}:
+
+\begin{theorem}\label{msnet_search}
+	Given a finite point set $S$ consisting of $n$ points, randomly distributed in the space $\mathbb{E}^d$, and a MSNET $G$ constructed on $S$, the algorithm \ref{GreedySearch} can find a monotone path between any two nodes $p$, $q$ in G without backtracking.
+\end{theorem}
+
+Although MSNET has such excellent properties, it does not restrict the out-degree of the points, which leads to a large average out-degree of the nodes in MSNET, which increases the search complexity. To restrict the out-degree of the graph, Delaunay graph\cite{aurenhammer1991voronoi} and sparse neighborhood graph (SNG)\cite{DBLP:conf/soda/AryaM93} were proposed. Among them, the Delaunay graph removes the long edges in the graph through triangulation, and each point only retains the short edges connected to the surrounding closer points. \cite{DBLP:journals/tkde/LiZSWLZL20} proves that the Delaunay graph guarantees the monotonic search property of the graph while reducing the degree of the graph. This method effectively limits the maximum out-degree of the graph in low-dimensional space, such as 2D space, but in high-dimensional space, the Delaunay graph almost degenerates into a fully connected graph\cite{DBLP:conf/cvpr/HarwoodD16}, so existing work usually uses approximate KNN graphs to approximate Delaunay graphs, such as GNNS \cite{DBLP:conf/ijcai/HajebiASZ11}. However, in the comparative experiment of NSG, we can see that the indexing accuracy of these approximate KNN graphs is not high. Their indexing accuracy is lower than that of the indexes of the approximate SNG graphs (such as HNSW\cite{DBLP:journals/corr/MalkovY16}, FANNG\cite{DBLP:conf/cvpr/HarwoodD16}). 
+
+Sparse neighborhood graph (SNG) reduces the out-degree of the graph by eliminating edges with similar directions, so that the out-edges of nodes are more evenly distributed in all directions. Its edge pruning algorithm is described in algorithm \ref{SNG_LinkSelect}. According to the algorithm, we can see that SNG also follows the principle of short edge priority, but unlike Delaunay graph, SNG graph excludes edges with similar directions to connected edges, which makes the out-edge direction of each point in SNG graph more uniform. SNG has been proven to be able to find query points along monotone paths in greedy search, and since the angle between every two edges with the same starting point in the SNG graph is greater than 60°, the upper limit of the out-degree of the SNG graph is independent of the number of points in the dataset\cite{DBLP:conf/soda/AryaM93}. Compared with the Delaunay graph, which almost degenerates into a fully connected graph in high-dimensional space, the SNG graph is more attractive for solving ANN search problems.
+
+
+
+\begin{algorithm}[h]
+	\caption{$LinkSelect(p,\mathbf{C},R)$}
+	\label{SNG_LinkSelect}
+	\KwData{target node $p$,candidate Set $\mathbf{C}$, degree limit $R$}
+	\KwResult{Result Set $\mathbf{S}$}
+	Result Set $\mathbf{S} \leftarrow \emptyset$\;
+	$\mathbf{C} \leftarrow \mathbf{C} \setminus p$\;
+	\While{$S.size<R$ and $\mathbf{C}\ne\emptyset$}{
+		$p^*\leftarrow \arg \min_{p'\in\mathbf{C}}\delta(p,p')$\;
+		$\mathbf{S} \leftarrow \mathbf{S} \cup p^*$\;
+		\ForEach{$p'\in\mathbf{C}$}{
+			\If{$\delta(p^*,p')\le\delta(p,p')$}{
+				remove $p'$ form $\mathbf{C}$
+			}
+		}
+	}
+	return $\mathbf{S}$\;
+\end{algorithm}
+In order to improve the speed of mapping, existing practical algorithms based on SNG graphs usually use approximate SNG graphs as nearest neighbor graphs for search. Approximate SNG graphs no longer guarantee that there must be a monotone path between every two points in the graph, and only try to ensure that there is a monotone path from one or a few search starting points to other points. These practical algorithms usually start with an empty graph or a low-quality graph to build a graph. When selecting external neighbors for point $p$, the approximate SNG graph no longer uses all points except point $p$ as a candidate set, but searches for the nearest $ef$ neighbors of point $p$ in the existing graph and uses the search results as a candidate set. This approximation greatly improves the speed of mapping, but it also makes it difficult to update the graph structure. Although there are many SNG graph-based indexes, and these works have shown good results on static high-dimensional data sets, most of them do not support updates or only support insertions, which makes them difficult to adapt to dynamic ANN search problems. The insertion strategy adopted by the existing SNG-based ANNS algorithm is shown in algorithm \ref{SNG_Insert}.
+
+\begin{algorithm}[h]
+	\caption{$Insert(p,\mathbf{G},R,L)$}
+	\label{SNG_Insert}
+	\KwData{Inserted node $p$, SNG graph $\mathbf{G}$, degree limit $R$, Candidate Set Size $L$}
+	Candidate Set $\mathbf{C} \leftarrow GreedySearch(\mathbf{G},\mathbf{G}.s,p,L,L)$\;
+	$\mathbf{C} \leftarrow LinkSelect(p,\mathbf{C},R)$\;
+	Connect a bidirectional edge between point $p$ and every point in the candidate set $\mathbf{C}$\;
+	\ForEach{node $c$ of $\mathbf{C}$}{
+		\If{The out-degree of $c$ exceeds $R$}{
+			$c.outerNeighbors \leftarrow LinkSelect(c,c.outerNeighbor,R)$\;
+		}
+	}
+\end{algorithm}
+
+Next, we will analyze the difficulty of updating on SNG graphs for SNG graph indexing algorithms.
